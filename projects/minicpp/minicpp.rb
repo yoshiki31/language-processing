@@ -3,6 +3,8 @@
 
 require_relative "lexer"
 require_relative "parser"
+require_relative "compiler"
+require_relative "virtual_machine"
 
 def main(argv)
   if argv.length != 1
@@ -12,7 +14,8 @@ def main(argv)
 
   source = File.read(argv.fetch(0))
   tokens = MiniCpp.tokenize(source)
-  puts MiniCpp.parse(tokens).inspect
+  ast = MiniCpp.parse(tokens)
+  MiniCpp.execute(ast)
   0
 rescue Errno::ENOENT => e
   warn "error: #{e.message}"
