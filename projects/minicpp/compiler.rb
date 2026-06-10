@@ -36,7 +36,7 @@ module MiniCpp
       when :int
         emit(:push, node[1])
       when :var
-        index = @locals.index(node[1]) or raise "未定義の変数: #{node[1]}"
+        index = @locals.index(node[1])
         emit(:get_local, index)
       when :add, :sub, :mul, :div, :lt, :gt, :eq
         compile_expr(node[1])
@@ -46,9 +46,24 @@ module MiniCpp
         compile_expr(node[2])
         emit(:set_local, local_index(node[1]))
       when :if
-        compile_if(node)
+        _, condition, then_block, else_block = node
+        compile_expr(condition)
+        jump_if_false = emit_placeholder(:jump_if_false)
+        compile_expr(then_block)
+        jump_to_end = emit_placeholder(:jump)
+        patch(jump_if_false, @code.size)
+        else_block ? compile_expr(else_block) : emit(:push, 0)
+        patch(jump_to_end, @code.size)
       when :while
-        compile_while(node)
+        _, condition, body = node
+        loop_start = @code.size
+        compile_expr(condition)
+        jump_if_false = emit_placeholder(:jump_if_false)
+        compile_expr(body)
+        emit(:pop)
+        emit(:jump, loop_start)
+        patch(jump_if_false, @code.size)
+        emit(:push, 0)
       when :call
         _, name, arguments = node
         arguments.each { |argument| compile_expr(argument) }
@@ -58,12 +73,13 @@ module MiniCpp
       when :expr_stmt
         compile_expr(node[1])
       when :var_decl
-        compile_variable_declaration(node)
+        _, name, value = node
+        index = local_index(name)
+        value ? compile_expr(value) : emit(:push, 0)
+        emit(:set_local, index)
       when :return
         compile_expr(node[1])
         emit(:ret)
-      else
-        raise "未知の式: #{node.inspect}"
       end
     end
 
@@ -83,50 +99,13 @@ module MiniCpp
       @code[index][1] = address
     end
 
-    private
-
-    def compile_if(node)
-      _, condition, then_block, else_block = node
-      compile_expr(condition)
-      jump_if_false = emit_placeholder(:jump_if_false)
-      compile_expr(then_block)
-      jump_to_end = emit_placeholder(:jump)
-      patch(jump_if_false, @code.size)
-      else_block ? compile_expr(else_block) : emit(:push, 0)
-      patch(jump_to_end, @code.size)
-    end
-
-    def compile_while(node)
-      _, condition, body = node
-      loop_start = @code.size
-      compile_expr(condition)
-      jump_if_false = emit_placeholder(:jump_if_false)
-      compile_expr(body)
-      emit(:pop)
-      emit(:jump, loop_start)
-      patch(jump_if_false, @code.size)
-      emit(:push, 0)
-    end
-
-    def compile_variable_declaration(node)
-      _, name, value = node
-      raise "変数が重複しています: #{name}" if @locals.include?(name)
-
-      index = local_index(name)
-      value ? compile_expr(value) : emit(:push, 0)
-      emit(:set_local, index)
-    end
   end
 
   class ProgramCompiler
     def compile(ast)
-      raise "programノードを期待しました" unless ast&.first == :program
-
       functions = {}
       ast[1].each do |node|
         name, function = compile_function(node)
-        raise "関数が重複しています: #{name}" if functions.key?(name)
-
         functions[name] = function
       end
       functions
@@ -135,8 +114,7 @@ module MiniCpp
     private
 
     def compile_function(node)
-      kind, name, params, body = node
-      raise "functionノードを期待しました: #{node.inspect}" unless kind == :function
+      _, name, params, body = node
 
       compiler = Compiler.new
       params.each { |param| compiler.local_index(param) }

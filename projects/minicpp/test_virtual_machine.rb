@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
-require "stringio"
 require_relative "lexer"
 require_relative "parser"
 require_relative "compiler"
@@ -14,19 +13,19 @@ class VirtualMachineTest < Minitest::Test
   end
 
   def execute(source)
-    output = StringIO.new
     ast = MiniCpp.parse(MiniCpp.tokenize(source))
-    result = MiniCpp.execute(ast, output: output)
-    [result, output.string]
+    result = nil
+    output, = capture_io { result = MiniCpp.execute(ast) }
+    [result, output]
   end
 
   def test_compiles_expression_to_stack_machine_instructions
-    functions = compile("int main() { print(1 + 2 * 3); return 0; }")
+    functions = compile("int main() { puts(1 + 2 * 3); return 0; }")
 
     assert_equal(
       [
         [:push, 1], [:push, 2], [:push, 3], [:mul], [:add],
-        [:call, "print", 1], [:pop], [:push, 0], [:ret],
+        [:call, "puts", 1], [:pop], [:push, 0], [:ret],
         [:ret]
       ],
       functions.fetch("main").fetch(:code)
@@ -59,9 +58,9 @@ class VirtualMachineTest < Minitest::Test
           i = i + 1;
         }
         if (result == 120) {
-          print(result);
+          puts(result);
         } else {
-          print(0);
+          puts(0);
         }
         return result;
       }
@@ -80,7 +79,7 @@ class VirtualMachineTest < Minitest::Test
       }
 
       int main() {
-        print(factorial(5));
+        puts(factorial(5));
         return 0;
       }
     MINICPP
@@ -96,7 +95,7 @@ class VirtualMachineTest < Minitest::Test
 
   def test_rejects_wrong_number_of_arguments
     error = assert_raises(RuntimeError) do
-      execute("int main() { print(1, 2); return 0; }")
+      execute("int main() { puts(1, 2); return 0; }")
     end
 
     assert_match(/引数の個数/, error.message)

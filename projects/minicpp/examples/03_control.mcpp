@@ -8,9 +8,9 @@ int main() {
   }
 
   if (result == 120) {
-    print(result);
+    puts(result);
   } else {
-    print(0);
+    puts(0);
   }
 
   return 0;

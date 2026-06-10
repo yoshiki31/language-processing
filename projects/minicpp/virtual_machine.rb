@@ -1,112 +1,95 @@
 # frozen_string_literal: true
 
 module MiniCpp
-  class VirtualMachine
-    Frame = Struct.new(:function, :pc, :locals)
+  Frame = Struct.new(:func, :pc, :locals)
 
-    def initialize(functions, output: $stdout)
+  class VM
+    def initialize(functions)
       @functions = functions
-      @output = output
       @stack = []
       @frames = []
     end
 
     def run
-      call_function("main", 0)
-
+      do_call("main", 0)
       loop do
         frame = @frames.last
-        instruction = frame.function.fetch(:code)[frame.pc]
-        raise "関数がreturnせず終了しました" unless instruction
-
+        instr = frame.func[:code][frame.pc]
         frame.pc += 1
-        case instruction.first
+        case instr[0]
         when :push
-          @stack << instruction[1]
+          @stack.push(instr[1])
         when :pop
-          pop_value
-        when :get_local
-          @stack << frame.locals.fetch(instruction[1])
-        when :set_local
-          frame.locals[instruction[1]] = @stack.last
+          @stack.pop
         when :add
-          binary_operation { |left, right| left + right }
+          b, a = @stack.pop, @stack.pop
+          @stack.push(a + b)
         when :sub
-          binary_operation { |left, right| left - right }
+          b, a = @stack.pop, @stack.pop
+          @stack.push(a - b)
         when :mul
-          binary_operation { |left, right| left * right }
+          b, a = @stack.pop, @stack.pop
+          @stack.push(a * b)
         when :div
-          binary_operation { |left, right| left / right }
+          b, a = @stack.pop, @stack.pop
+          @stack.push(a / b)
         when :lt
-          binary_operation { |left, right| left < right ? 1 : 0 }
+          b, a = @stack.pop, @stack.pop
+          @stack.push(a < b ? 1 : 0)
         when :gt
-          binary_operation { |left, right| left > right ? 1 : 0 }
+          b, a = @stack.pop, @stack.pop
+          @stack.push(a > b ? 1 : 0)
         when :eq
-          binary_operation { |left, right| left == right ? 1 : 0 }
+          b, a = @stack.pop, @stack.pop
+          @stack.push(a == b ? 1 : 0)
+        when :get_local
+          @stack.push(frame.locals[instr[1]])
+        when :set_local
+          frame.locals[instr[1]] = @stack.last
         when :jump
-          frame.pc = instruction[1]
+          frame.pc = instr[1]
         when :jump_if_false
-          frame.pc = instruction[1] if pop_value == 0
+          frame.pc = instr[1] if @stack.pop == 0
         when :call
-          result = call_function(instruction[1], instruction[2])
-          @stack << result unless result.nil?
+          result = do_call(instr[1], instr[2])
+          @stack.push(result) if result
         when :ret
-          result = return_from_function
-          return result if @frames.empty?
-        else
-          raise "未知の命令です: #{instruction.inspect}"
+          do_return
+          return @stack.pop if @frames.empty?
         end
       end
     end
 
-    private
+    def do_call(name, argc)
+      if name == "puts"
+        raise "引数の個数が違います: puts" if argc != 1
 
-    def binary_operation
-      right = pop_value
-      left = pop_value
-      @stack << yield(left, right)
-    end
+        value = @stack.pop
+        puts value
+        return value
+      end
 
-    def pop_value
-      raise "値スタックが空です" if @stack.empty?
+      func = @functions[name] or raise "未定義の関数: #{name}"
+      raise "引数の個数が違います: #{name}" if argc != func[:nparams]
 
-      @stack.pop
-    end
-
-    def call_function(name, argc)
-      return call_builtin_print(argc) if name == "print"
-
-      function = @functions[name]
-      raise "未定義の関数です: #{name}" unless function
-      raise "引数の個数が違います: #{name}" unless argc == function.fetch(:nparams)
-
-      arguments = @stack.pop(argc)
-      locals = Array.new(function.fetch(:nlocals), 0)
-      arguments.each_with_index { |value, index| locals[index] = value }
-      @frames << Frame.new(function, 0, locals)
+      args = @stack.pop(argc)
+      locals = Array.new(func[:nlocals], 0)
+      args.each_with_index { |value, index| locals[index] = value }
+      @frames.push(Frame.new(func, 0, locals))
       nil
     end
 
-    def call_builtin_print(argc)
-      raise "引数の個数が違います: print" unless argc == 1
-
-      value = pop_value
-      @output.puts(value)
-      value
-    end
-
-    def return_from_function
-      value = pop_value
+    def do_return
+      retval = @stack.pop
       @frames.pop
-      @stack << value unless @frames.empty?
-      value
+      @stack.push(retval)
     end
   end
 
   module_function
 
-  def execute(ast, output: $stdout)
+  def execute(ast)
     functions = compile(ast)
-    VirtualMachine.new(functions, output: output).run
+    VM.new(functions).run
   end
 end
