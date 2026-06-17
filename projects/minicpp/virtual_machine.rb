@@ -84,12 +84,52 @@ module MiniCpp
     end
   end
 
+  class ObjectRef
+    attr_reader :address
+
+    def initialize(address)
+      @address = address
+    end
+
+    def inspect
+      "#<MiniCpp::ObjectRef address=#{@address}>"
+    end
+  end
+
+  class Heap
+    def initialize
+      @objects = []
+    end
+
+    def allocate(object)
+      address = @objects.size
+      @objects << object
+      ObjectRef.new(address)
+    end
+
+    def fetch(ref)
+      raise "ヒープ参照ではありません: #{ref.inspect}" unless ref.is_a?(ObjectRef)
+
+      object = @objects[ref.address]
+      raise "不正なヒープ参照です: #{ref.inspect}" unless object
+
+      object
+    end
+
+    def size
+      @objects.size
+    end
+  end
+
   class VM
+    attr_reader :heap
+
     def initialize(functions, output: $stdout)
       @functions = functions
       @output = output
       @stack = []
       @frames = []
+      @heap = Heap.new
     end
 
     def run
@@ -133,15 +173,16 @@ module MiniCpp
           @stack.push(Value.int(a == b ? 1 : 0))
         when :new_int_array
           size = @stack.pop.as_int
-          @stack.push(Value.object(IntArray.new(size)))
+          ref = @heap.allocate(IntArray.new(size))
+          @stack.push(Value.object(ref))
         when :array_get
           index = @stack.pop.as_int
-          array = @stack.pop.as_object
+          array = @heap.fetch(@stack.pop.as_object)
           @stack.push(array.get(index))
         when :array_set
           value = @stack.pop
           index = @stack.pop.as_int
-          array = @stack.pop.as_object
+          array = @heap.fetch(@stack.pop.as_object)
           array.set(index, value)
           @stack.push(value)
         when :get_local

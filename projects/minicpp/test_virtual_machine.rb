@@ -130,6 +130,14 @@ class VirtualMachineTest < Minitest::Test
     assert_equal [25, "0\n"], execute(source)
   end
 
+  def test_allocates_int_arrays_on_vm_heap
+    functions = compile("int main() { int[] values = new int[2]; values[0] = 7; return values[0]; }")
+    vm = MiniCpp::VM.new(functions)
+
+    assert_equal 7, vm.run
+    assert_equal 1, vm.heap.size
+  end
+
   def test_passes_int_array_to_user_function
     source = <<~MINICPP
       int second(int[] values) {
