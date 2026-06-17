@@ -1,0 +1,4 @@
+projects/cpp-bytecode-vm/cpp_source_vm
+projects/cpp-bytecode-vm/cpp_vm_example
+projects/cpp-bytecode-vm/test_cpp_vm
+projects/cpp-bytecode-vm/test_gcc_ast_frontend

@@ -48,6 +48,21 @@ class VirtualMachineTest < Minitest::Test
     assert_equal [[:push, 0]], compiler.code
   end
 
+  def test_value_distinguishes_ints_from_objects
+    object = Object.new
+
+    int_value = MiniCpp::Value.int(42)
+    object_value = MiniCpp::Value.object(object)
+
+    assert int_value.int?
+    refute int_value.object?
+    assert_equal 42, int_value.as_int
+
+    assert object_value.object?
+    refute object_value.int?
+    assert_same object, object_value.as_object
+  end
+
   def test_executes_arithmetic_variables_and_control_flow
     source = <<~MINICPP
       int main() {

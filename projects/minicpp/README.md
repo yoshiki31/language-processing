@@ -19,12 +19,31 @@ $ ruby minicpp.rb examples/01_arithmetic.mcpp
 7
 ```
 
+各処理段階の結果をすべて表示:
+
+```console
+$ ruby minicpp.rb --all examples/01_arithmetic.mcpp
+== 字句解析結果（トークン列） ==
+...
+== 構文解析結果（AST） ==
+...
+== コンパイル結果（バイトコード） ==
+...
+== 実行結果 ==
+7
+戻り値: 0
+```
+
+個別に確認する場合は `--tokens`、`--ast`、`--bytecode`、`--result` を指定します。
+複数のオプションを同時に指定することもできます。
+
 テスト:
 
 ```console
 $ ruby test_lexer.rb
 $ ruby test_parser.rb
 $ ruby test_virtual_machine.rb
+$ ruby test_minicpp.rb
 ```
 
 VMは値スタックと関数呼び出し用のフレームスタックを持ちます。コンパイラはASTを
