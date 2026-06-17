@@ -36,6 +36,17 @@ class LexerTest < Minitest::Test
     )
   end
 
+  def test_tokenizes_array_brackets
+    assert_equal(
+      [
+        [:ident, "int"], [:op, "["], [:op, "]"], [:ident, "a"],
+        [:op, "="], [:ident, "new"], [:ident, "int"], [:op, "["],
+        [:int, 3], [:op, "]"], [:op, ";"], [:eof, nil]
+      ],
+      MiniCpp.tokenize("int[] a = new int[3];")
+    )
+  end
+
   def test_skips_whitespace_and_line_comments
     source = "int x; // comment\nreturn x;"
 

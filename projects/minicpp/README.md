@@ -19,6 +19,17 @@ $ ruby minicpp.rb examples/01_arithmetic.mcpp
 7
 ```
 
+`int` 配列:
+
+```cpp
+int main() {
+  int[] values = new int[3];
+  values[0] = 10;
+  values[1] = values[0] + 5;
+  return values[1];
+}
+```
+
 各処理段階の結果をすべて表示:
 
 ```console

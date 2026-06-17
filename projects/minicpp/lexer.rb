@@ -17,7 +17,7 @@ module MiniCpp
         tokens << [:int, Regexp.last_match(0).to_i]
       when /\A[a-zA-Z_]\w*/
         tokens << [:ident, Regexp.last_match(0)]
-      when %r{\A(==|[+\-*/<>=;(),{}])}
+      when %r{\A(==|[+\-*/<>=;(),{}\[\]])}
         # == を = より先に調べて最長一致させる。
         tokens << [:op, Regexp.last_match(0)]
       else

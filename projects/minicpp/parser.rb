@@ -26,9 +26,9 @@ module MiniCpp
       token
     end
 
-    # function ::= "int" IDENT "(" params ")" block
+    # function ::= type IDENT "(" params ")" block
     def parse_function
-      expect_ident("int")
+      parse_type
       name = expect_identifier
       expect_op("(")
       params = parse_params
@@ -36,13 +36,13 @@ module MiniCpp
       [:function, name, params, parse_block]
     end
 
-    # params ::= ("int" IDENT ("," "int" IDENT)*)?
+    # params ::= (type IDENT ("," type IDENT)*)?
     def parse_params
       params = []
       return params if peek == [:op, ")"]
 
       loop do
-        expect_ident("int")
+        parse_type
         params << expect_identifier
         break unless peek == [:op, ","]
 
@@ -71,9 +71,9 @@ module MiniCpp
       end
     end
 
-    # variable-declaration ::= "int" IDENT ("=" expression)? ";"
+    # variable-declaration ::= type IDENT ("=" expression)? ";"
     def parse_variable_declaration
-      expect_ident("int")
+      parse_type
       name = expect_identifier
       value = nil
       if peek == [:op, "="]
@@ -133,10 +133,16 @@ module MiniCpp
       node = parse_comparison
       return node unless peek == [:op, "="]
 
-      raise "代入の左辺には変数が必要です" unless node[0] == :var
-
       advance
-      [:assign, node[1], parse_assignment]
+      value = parse_assignment
+      case node[0]
+      when :var
+        [:assign, node[1], value]
+      when :array_get
+        [:array_set, node[1], node[2], value]
+      else
+        raise "代入の左辺には変数または配列要素が必要です"
+      end
     end
 
     # comparison ::= add (("<" | ">" | "==") add)*
@@ -173,14 +179,18 @@ module MiniCpp
       node
     end
 
-    # primary ::= INT | IDENT | call | "(" expression ")"
+    # primary ::= INT | IDENT | call | new-int-array | "(" expression ")"
     def parse_primary
       token = advance
-      case token&.first
+      node = case token&.first
       when :int
         [:int, token[1]]
       when :ident
-        peek == [:op, "("] ? parse_call(token[1]) : [:var, token[1]]
+        if token[1] == "new"
+          parse_new
+        else
+          peek == [:op, "("] ? parse_call(token[1]) : [:var, token[1]]
+        end
       when :op
         raise "( を期待しました: #{token.inspect}" unless token[1] == "("
 
@@ -190,6 +200,7 @@ module MiniCpp
       else
         raise "予期しないトークン: #{token.inspect}"
       end
+      parse_postfix(node)
     end
 
     # call ::= IDENT "(" arguments ")"
@@ -205,6 +216,35 @@ module MiniCpp
       end
       expect_op(")")
       [:call, name, arguments]
+    end
+
+    # new-int-array ::= "new" "int" "[" expression "]"
+    def parse_new
+      expect_ident("int")
+      expect_op("[")
+      size = parse_expression
+      expect_op("]")
+      [:new_int_array, size]
+    end
+
+    # postfix ::= primary ("[" expression "]")*
+    def parse_postfix(node)
+      while peek == [:op, "["]
+        advance
+        index = parse_expression
+        expect_op("]")
+        node = [:array_get, node, index]
+      end
+      node
+    end
+
+    def parse_type
+      expect_ident("int")
+      return :int unless peek == [:op, "["]
+
+      advance
+      expect_op("]")
+      :int_array
     end
 
     def expect_identifier

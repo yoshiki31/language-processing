@@ -52,6 +52,38 @@ module MiniCpp
     end
   end
 
+  class IntArray
+    def initialize(size)
+      raise "配列サイズが負です: #{size}" if size.negative?
+
+      @elements = Array.new(size) { Value.int(0) }
+    end
+
+    def get(index)
+      check_index(index)
+      @elements[index]
+    end
+
+    def set(index, value)
+      raise "int配列には整数だけを格納できます: #{value.inspect}" unless value.int?
+
+      check_index(index)
+      @elements[index] = value
+    end
+
+    def inspect
+      "#<MiniCpp::IntArray size=#{@elements.size}>"
+    end
+
+    private
+
+    def check_index(index)
+      return if index >= 0 && index < @elements.size
+
+      raise "配列の添字が範囲外です: #{index}"
+    end
+  end
+
   class VM
     def initialize(functions, output: $stdout)
       @functions = functions
@@ -72,19 +104,46 @@ module MiniCpp
         when :pop
           @stack.pop
         when :add
-          binary_int { |a, b| a + b }
+          b = @stack.pop.as_int
+          a = @stack.pop.as_int
+          @stack.push(Value.int(a + b))
         when :sub
-          binary_int { |a, b| a - b }
+          b = @stack.pop.as_int
+          a = @stack.pop.as_int
+          @stack.push(Value.int(a - b))
         when :mul
-          binary_int { |a, b| a * b }
+          b = @stack.pop.as_int
+          a = @stack.pop.as_int
+          @stack.push(Value.int(a * b))
         when :div
-          binary_int { |a, b| a / b }
+          b = @stack.pop.as_int
+          a = @stack.pop.as_int
+          @stack.push(Value.int(a / b))
         when :lt
-          binary_int { |a, b| a < b ? 1 : 0 }
+          b = @stack.pop.as_int
+          a = @stack.pop.as_int
+          @stack.push(Value.int(a < b ? 1 : 0))
         when :gt
-          binary_int { |a, b| a > b ? 1 : 0 }
+          b = @stack.pop.as_int
+          a = @stack.pop.as_int
+          @stack.push(Value.int(a > b ? 1 : 0))
         when :eq
-          binary_int { |a, b| a == b ? 1 : 0 }
+          b = @stack.pop.as_int
+          a = @stack.pop.as_int
+          @stack.push(Value.int(a == b ? 1 : 0))
+        when :new_int_array
+          size = @stack.pop.as_int
+          @stack.push(Value.object(IntArray.new(size)))
+        when :array_get
+          index = @stack.pop.as_int
+          array = @stack.pop.as_object
+          @stack.push(array.get(index))
+        when :array_set
+          value = @stack.pop
+          index = @stack.pop.as_int
+          array = @stack.pop.as_object
+          array.set(index, value)
+          @stack.push(value)
         when :get_local
           @stack.push(frame.locals[instr[1]])
         when :set_local
@@ -128,13 +187,6 @@ module MiniCpp
       @stack.push(retval)
     end
 
-    private
-
-    def binary_int
-      b = @stack.pop.as_int
-      a = @stack.pop.as_int
-      @stack.push(Value.int(yield(a, b)))
-    end
   end
 
   module_function

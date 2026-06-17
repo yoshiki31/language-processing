@@ -42,6 +42,18 @@ module MiniCpp
         compile_expr(node[1])
         compile_expr(node[2])
         emit(node[0])
+      when :new_int_array
+        compile_expr(node[1])
+        emit(:new_int_array)
+      when :array_get
+        compile_expr(node[1])
+        compile_expr(node[2])
+        emit(:array_get)
+      when :array_set
+        compile_expr(node[1])
+        compile_expr(node[2])
+        compile_expr(node[3])
+        emit(:array_set)
       when :assign
         compile_expr(node[2])
         emit(:set_local, local_index(node[1]))

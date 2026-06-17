@@ -63,6 +63,20 @@ class VirtualMachineTest < Minitest::Test
     assert_same object, object_value.as_object
   end
 
+  def test_compiles_int_array_operations
+    functions = compile("int main() { int[] a = new int[2]; a[1] = 9; return a[1]; }")
+
+    assert_equal(
+      [
+        [:push, 2], [:new_int_array], [:set_local, 0], [:pop],
+        [:get_local, 0], [:push, 1], [:push, 9], [:array_set], [:pop],
+        [:get_local, 0], [:push, 1], [:array_get], [:ret],
+        [:ret]
+      ],
+      functions.fetch("main").fetch(:code)
+    )
+  end
+
   def test_executes_arithmetic_variables_and_control_flow
     source = <<~MINICPP
       int main() {
@@ -100,6 +114,44 @@ class VirtualMachineTest < Minitest::Test
     MINICPP
 
     assert_equal [0, "120\n"], execute(source)
+  end
+
+  def test_executes_int_array_creation_access_and_assignment
+    source = <<~MINICPP
+      int main() {
+        int[] values = new int[3];
+        values[0] = 10;
+        values[1] = values[0] + 5;
+        puts(values[2]);
+        return values[0] + values[1];
+      }
+    MINICPP
+
+    assert_equal [25, "0\n"], execute(source)
+  end
+
+  def test_passes_int_array_to_user_function
+    source = <<~MINICPP
+      int second(int[] values) {
+        return values[1];
+      }
+
+      int main() {
+        int[] values = new int[2];
+        values[1] = 8;
+        return second(values);
+      }
+    MINICPP
+
+    assert_equal [8, ""], execute(source)
+  end
+
+  def test_rejects_array_index_out_of_bounds
+    error = assert_raises(RuntimeError) do
+      execute("int main() { int[] values = new int[1]; return values[1]; }")
+    end
+
+    assert_match(/範囲外/, error.message)
   end
 
   def test_assignment_introduces_a_local_variable
