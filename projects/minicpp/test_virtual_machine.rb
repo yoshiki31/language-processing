@@ -138,6 +138,33 @@ class VirtualMachineTest < Minitest::Test
     assert_equal 1, vm.heap.size
   end
 
+  def test_collects_unreferenced_int_arrays
+    source = <<~MINICPP
+      int main() {
+        int[] first = new int[1];
+        first[0] = 1;
+        int[] second = new int[1];
+        second[0] = 2;
+        first = second;
+        gc();
+        return first[0];
+      }
+    MINICPP
+    vm = MiniCpp::VM.new(compile(source))
+
+    assert_equal 2, vm.run
+    assert_equal 1, vm.heap.size
+  end
+
+  def test_gc_after_program_finish_collects_arrays_without_roots
+    vm = MiniCpp::VM.new(compile("int main() { int[] values = new int[1]; return 0; }"))
+
+    assert_equal 0, vm.run
+    assert_equal 1, vm.heap.size
+    assert_equal 1, vm.gc
+    assert_equal 0, vm.heap.size
+  end
+
   def test_passes_int_array_to_user_function
     source = <<~MINICPP
       int second(int[] values) {

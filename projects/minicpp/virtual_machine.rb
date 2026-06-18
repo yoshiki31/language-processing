@@ -97,27 +97,53 @@ module MiniCpp
   end
 
   class Heap
+    Entry = Struct.new(:object, :marked)
+
     def initialize
       @objects = []
     end
 
     def allocate(object)
       address = @objects.size
-      @objects << object
+      @objects << Entry.new(object, false)
       ObjectRef.new(address)
     end
 
     def fetch(ref)
       raise "ヒープ参照ではありません: #{ref.inspect}" unless ref.is_a?(ObjectRef)
 
-      object = @objects[ref.address]
-      raise "不正なヒープ参照です: #{ref.inspect}" unless object
+      entry = @objects[ref.address]
+      raise "不正なヒープ参照です: #{ref.inspect}" unless entry
 
-      object
+      entry.object
+    end
+
+    def mark(ref)
+      raise "ヒープ参照ではありません: #{ref.inspect}" unless ref.is_a?(ObjectRef)
+
+      entry = @objects[ref.address]
+      raise "不正なヒープ参照です: #{ref.inspect}" unless entry
+
+      entry.marked = true
+    end
+
+    def sweep
+      collected = 0
+      @objects.each_with_index do |entry, index|
+        next unless entry
+
+        if entry.marked
+          entry.marked = false
+        else
+          @objects[index] = nil
+          collected += 1
+        end
+      end
+      collected
     end
 
     def size
-      @objects.size
+      @objects.count { |entry| entry }
     end
   end
 
@@ -212,6 +238,13 @@ module MiniCpp
         return value
       end
 
+      if name == "gc"
+        raise "引数の個数が違います: gc" if argc != 0
+
+        gc
+        return Value.int(0)
+      end
+
       func = @functions[name] or raise "未定義の関数: #{name}"
       raise "引数の個数が違います: #{name}" if argc != func[:nparams]
 
@@ -226,6 +259,22 @@ module MiniCpp
       retval = @stack.pop
       @frames.pop
       @stack.push(retval)
+    end
+
+    def gc
+      @stack.each { |value| mark_value(value) }
+      @frames.each do |frame|
+        frame.locals.each { |value| mark_value(value) }
+      end
+      @heap.sweep
+    end
+
+    private
+
+    def mark_value(value)
+      return unless value.object?
+
+      @heap.mark(value.as_object)
     end
 
   end
