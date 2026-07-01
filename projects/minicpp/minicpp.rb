@@ -13,21 +13,30 @@ DISPLAY_OPTIONS = {
   tokens: "字句解析結果（トークン列）",
   ast: "構文解析結果（AST）",
   bytecode: "コンパイル結果（バイトコード）",
-  result: "実行結果"
+  result: "実行結果",
+  gc_stats: "GC統計"
 }.freeze
 
 def parse_options(argv)
   displays = []
+  vm_options = {}
   parser = OptionParser.new do |opts|
     opts.banner = "usage: ruby minicpp.rb [options] <source-file>"
     opts.on("--tokens", "字句解析結果を表示") { displays << :tokens }
     opts.on("--ast", "構文解析結果を表示") { displays << :ast }
     opts.on("--bytecode", "コンパイル結果を表示") { displays << :bytecode }
     opts.on("--result", "プログラムの出力と戻り値を表示") { displays << :result }
+    opts.on("--gc-stats", "GC統計を表示") { displays << :gc_stats }
+    opts.on("--gc-strategy STRATEGY", "自動GC方式を指定（manual, sweep, compact）") do |strategy|
+      vm_options[:gc_strategy] = strategy.to_sym
+    end
+    opts.on("--gc-threshold N", Integer, "自動GCを起動する生存オブジェクト数の閾値") do |threshold|
+      vm_options[:gc_threshold] = threshold
+    end
     opts.on("--all", "すべての処理結果を表示") { displays.replace(DISPLAY_OPTIONS.keys) }
   end
   parser.parse!(argv)
-  [parser, displays.uniq]
+  [parser, displays.uniq, vm_options]
 end
 
 def print_section(out, name)
@@ -45,8 +54,18 @@ def print_bytecode(out, functions)
   end
 end
 
+def print_gc_stats(out, stats)
+  stats.each do |key, value|
+    if value.is_a?(Float)
+      out.puts "#{key}: #{format("%.3f", value)}"
+    else
+      out.puts "#{key}: #{value}"
+    end
+  end
+end
+
 def main(argv, out: $stdout, err: $stderr)
-  option_parser, displays = parse_options(argv)
+  option_parser, displays, vm_options = parse_options(argv)
   if argv.length != 1
     err.puts option_parser
     return 1
@@ -58,31 +77,40 @@ def main(argv, out: $stdout, err: $stderr)
     print_section(out, :tokens) { PP.pp(tokens, out) }
   end
 
-  return 0 if displays.any? && (displays & [:ast, :bytecode, :result]).empty?
+  execution_requested = displays.empty? || displays.include?(:result) || displays.include?(:gc_stats)
+
+  return 0 if displays.any? && (displays & [:ast, :bytecode]).empty? && !execution_requested
 
   ast = MiniCpp.parse(tokens)
   if displays.include?(:ast)
     print_section(out, :ast) { PP.pp(ast, out) }
   end
 
-  return 0 if displays.any? && (displays & [:bytecode, :result]).empty?
+  return 0 if displays.any? && (displays & [:bytecode]).empty? && !execution_requested
 
   functions = MiniCpp.compile(ast)
   if displays.include?(:bytecode)
     print_section(out, :bytecode) { print_bytecode(out, functions) }
   end
 
-  return 0 if displays.any? && !displays.include?(:result)
+  return 0 unless execution_requested
 
+  vm = nil
   if displays.include?(:result)
     program_output = StringIO.new
-    result = MiniCpp::VM.new(functions, output: program_output).run
+    vm = MiniCpp::VM.new(functions, output: program_output, **vm_options)
+    result = vm.run
     print_section(out, :result) do
       out.print program_output.string
       out.puts "戻り値: #{result.inspect}"
     end
   else
-    MiniCpp::VM.new(functions, output: out).run
+    vm = MiniCpp::VM.new(functions, output: out, **vm_options)
+    vm.run
+  end
+
+  if displays.include?(:gc_stats)
+    print_section(out, :gc_stats) { print_gc_stats(out, vm.gc_stats) }
   end
   0
 rescue OptionParser::ParseError => e

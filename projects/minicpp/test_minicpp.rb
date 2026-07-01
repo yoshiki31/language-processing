@@ -55,4 +55,25 @@ class MiniCppCliTest < Minitest::Test
     refute_match(/^9$/, out)
     assert_empty err
   end
+
+  def test_gc_stats_option_displays_automatic_gc_statistics
+    source = <<~MINICPP
+      int main() {
+        int[] old_values = new int[1];
+        int[] live_values = new int[1];
+        old_values = live_values;
+        int[] new_values = new int[1];
+        return 0;
+      }
+    MINICPP
+
+    status, out, err = run_cli(source, "--result", "--gc-stats", "--gc-strategy", "sweep", "--gc-threshold", "2")
+
+    assert_equal 0, status
+    assert_includes out, "== GC統計 =="
+    assert_includes out, "auto_gc_count: 1"
+    assert_includes out, "sweep_count: 1"
+    assert_includes out, "collected_objects: 1"
+    assert_empty err
+  end
 end
