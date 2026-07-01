@@ -214,6 +214,61 @@ class VirtualMachineTest < Minitest::Test
     assert_equal 3, vm.heap.size
   end
 
+  def test_compact_gc_moves_live_arrays_and_updates_references
+    source = <<~MINICPP
+      int main() {
+        int[] dead1 = new int[1];
+        int[][] arrays = new int[2];
+        int[] left = new int[1];
+        int[] dead2 = new int[1];
+        int[] right = new int[1];
+
+        left[0] = 10;
+        right[0] = 20;
+        arrays[0] = left;
+        arrays[1] = right;
+
+        dead1 = left;
+        dead2 = right;
+        compact_gc();
+
+        return arrays[0][0] + arrays[1][0];
+      }
+    MINICPP
+    vm = MiniCpp::VM.new(compile(source))
+
+    assert_equal 30, vm.run
+    assert_equal 3, vm.heap.size
+    assert_equal 3, vm.heap.slots
+
+    heap_objects = vm.heap.instance_variable_get(:@objects)
+    arrays = heap_objects.fetch(0).object
+    assert_equal 1, arrays.get(0).as_object.address
+    assert_equal 2, arrays.get(1).as_object.address
+  end
+
+  def test_compact_gc_reports_collection_and_reference_updates
+    source = <<~MINICPP
+      int main() {
+        int[][] arrays = new int[1];
+        int[] dead = new int[1];
+        int[] values = new int[1];
+
+        arrays[0] = values;
+        dead = values;
+        return arrays[0][0];
+      }
+    MINICPP
+    vm = MiniCpp::VM.new(compile(source))
+
+    assert_equal 0, vm.run
+    stats = vm.compact_gc
+
+    assert_equal 3, stats.fetch(:collected)
+    assert_equal 0, vm.heap.size
+    assert_equal 0, vm.heap.slots
+  end
+
   def test_rejects_array_index_out_of_bounds
     error = assert_raises(RuntimeError) do
       execute("int main() { int[] values = new int[1]; return values[1]; }")

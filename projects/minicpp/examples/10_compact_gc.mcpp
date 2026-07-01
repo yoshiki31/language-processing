@@ -1,0 +1,18 @@
+int main() {
+  int[] dead1 = new int[1];
+  int[][] arrays = new int[2];
+  int[] left = new int[1];
+  int[] dead2 = new int[1];
+  int[] right = new int[1];
+
+  left[0] = 10;
+  right[0] = 20;
+  arrays[0] = left;
+  arrays[1] = right;
+
+  dead1 = left;
+  dead2 = right;
+  compact_gc();
+
+  return arrays[0][0] + arrays[1][0];
+}

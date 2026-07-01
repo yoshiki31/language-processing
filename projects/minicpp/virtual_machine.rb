@@ -89,7 +89,8 @@ module MiniCpp
   end
 
   class ObjectRef
-    attr_reader :address
+    # Mark & Compact GCで参照先アドレスを書き換えるため、addressは更新可能にする。
+    attr_accessor :address
 
     def initialize(address)
       @address = address
@@ -151,6 +152,50 @@ module MiniCpp
 
     def size
       @objects.count { |entry| entry }
+    end
+
+    def each_object
+      @objects.each do |entry|
+        yield entry.object if entry
+      end
+    end
+
+    def slots
+      @objects.size
+    end
+
+    def compact
+      # forwardingは「古いヒープアドレス -> compact後の新しいヒープアドレス」の対応表。
+      # compact後にスタック、ローカル変数、配列要素のObjectRefを書き換えるために使う。
+      forwarding = {}
+      compacted = []
+      collected = 0
+      moved = 0
+      old_slots = @objects.size
+
+      @objects.each_with_index do |entry, old_address|
+        next unless entry
+
+        if entry.marked
+          new_address = compacted.size
+          forwarding[old_address] = new_address
+          moved += 1 if old_address != new_address
+          entry.marked = false
+          # markedな生存オブジェクトだけを新しいヒープ配列へ前から詰める。
+          compacted << entry
+        else
+          collected += 1
+        end
+      end
+
+      @objects = compacted
+      {
+        collected: collected,
+        moved: moved,
+        old_slots: old_slots,
+        new_slots: @objects.size,
+        forwarding: forwarding
+      }
     end
   end
 
@@ -252,6 +297,13 @@ module MiniCpp
         return Value.int(0)
       end
 
+      if name == "compact_gc"
+        raise "引数の個数が違います: compact_gc" if argc != 0
+
+        compact_gc
+        return Value.int(0)
+      end
+
       func = @functions[name] or raise "未定義の関数: #{name}"
       raise "引数の個数が違います: #{name}" if argc != func[:nparams]
 
@@ -269,14 +321,28 @@ module MiniCpp
     end
 
     def gc
+      mark_roots
+      @heap.sweep
+    end
+
+    def compact_gc
+      # 1. MiniC++のルート集合から到達可能なオブジェクトをmarkする。
+      mark_roots
+      # 2. markedなオブジェクトだけをヒープ先頭へ詰め、forwarding tableを作る。
+      stats = @heap.compact
+      # 3. 移動したオブジェクトを指すObjectRefのaddressを新しいアドレスへ更新する。
+      stats.merge(updated_references: update_references(stats.fetch(:forwarding)))
+    end
+
+    private
+
+    def mark_roots
+      # MiniC++ VMでのGCルートは、値スタックと各関数フレームのローカル変数。
       @stack.each { |value| mark_value(value) }
       @frames.each do |frame|
         frame.locals.each { |value| mark_value(value) }
       end
-      @heap.sweep
     end
-
-    private
 
     def mark_value(value)
       return unless value.object?
@@ -285,7 +351,42 @@ module MiniCpp
       return unless @heap.mark(ref)
 
       object = @heap.fetch(ref)
+      # 配列の中に入っている配列参照も辿る。循環参照はHeap#markの再訪問防止で止まる。
       object.each_value { |element| mark_value(element) } if object.respond_to?(:each_value)
+    end
+
+    def update_references(forwarding)
+      updated_refs = {}
+      updates = 0
+
+      # ヒープをcompactした後、MiniC++ VM上の全参照をforwarding tableに従って更新する。
+      @stack.each { |value| updates += update_reference(value, forwarding, updated_refs) }
+      @frames.each do |frame|
+        frame.locals.each { |value| updates += update_reference(value, forwarding, updated_refs) }
+      end
+      @heap.each_object do |object|
+        next unless object.respond_to?(:each_value)
+
+        object.each_value { |value| updates += update_reference(value, forwarding, updated_refs) }
+      end
+
+      updates
+    end
+
+    def update_reference(value, forwarding, updated_refs)
+      return 0 unless value.object?
+
+      ref = value.as_object
+      return 0 if updated_refs[ref.object_id]
+
+      new_address = forwarding[ref.address]
+      return 0 unless new_address
+
+      updated_refs[ref.object_id] = true
+      # ObjectRef自体を書き換えるので、同じ参照を共有している値はまとめて新アドレスを見る。
+      changed = ref.address != new_address
+      ref.address = new_address
+      changed ? 1 : 0
     end
 
   end
