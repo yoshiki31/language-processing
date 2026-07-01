@@ -109,8 +109,13 @@ module MiniCpp
     end
 
     def allocate(object)
-      address = @objects.size
-      @objects << Entry.new(object, false)
+      address = @objects.index(nil)
+      if address
+        @objects[address] = Entry.new(object, false)
+      else
+        address = @objects.size
+        @objects << Entry.new(object, false)
+      end
       ObjectRef.new(address)
     end
 
@@ -200,14 +205,21 @@ module MiniCpp
   end
 
   class VM
-    attr_reader :heap
+    GC_STRATEGIES = [:manual, :sweep, :compact].freeze
 
-    def initialize(functions, output: $stdout)
+    attr_reader :heap, :gc_stats
+
+    def initialize(functions, output: $stdout, gc_strategy: :manual, gc_threshold: nil)
       @functions = functions
       @output = output
       @stack = []
       @frames = []
       @heap = Heap.new
+      @gc_strategy = gc_strategy.to_sym
+      raise "未知のGC方式です: #{@gc_strategy}" unless GC_STRATEGIES.include?(@gc_strategy)
+
+      @gc_threshold = gc_threshold
+      @gc_stats = empty_gc_stats
     end
 
     def run
@@ -251,7 +263,7 @@ module MiniCpp
           @stack.push(Value.int(a == b ? 1 : 0))
         when :new_int_array
           size = @stack.pop.as_int
-          ref = @heap.allocate(IntArray.new(size))
+          ref = allocate_int_array(size)
           @stack.push(Value.object(ref))
         when :array_get
           index = @stack.pop.as_int
@@ -293,14 +305,14 @@ module MiniCpp
       if name == "gc"
         raise "引数の個数が違います: gc" if argc != 0
 
-        gc
+        gc(reason: :manual)
         return Value.int(0)
       end
 
       if name == "compact_gc"
         raise "引数の個数が違います: compact_gc" if argc != 0
 
-        compact_gc
+        compact_gc(reason: :manual)
         return Value.int(0)
       end
 
@@ -320,21 +332,91 @@ module MiniCpp
       @stack.push(retval)
     end
 
-    def gc
-      mark_roots
-      @heap.sweep
+    def gc(reason: :direct)
+      stats = timed_gc(:sweep, reason) do
+        mark_roots
+        collected = @heap.sweep
+        {
+          collected: collected,
+          moved: 0,
+          updated_references: 0,
+          old_slots: @heap.slots,
+          new_slots: @heap.slots
+        }
+      end
+      stats.fetch(:collected)
     end
 
-    def compact_gc
+    def compact_gc(reason: :direct)
       # 1. MiniC++のルート集合から到達可能なオブジェクトをmarkする。
-      mark_roots
-      # 2. markedなオブジェクトだけをヒープ先頭へ詰め、forwarding tableを作る。
-      stats = @heap.compact
-      # 3. 移動したオブジェクトを指すObjectRefのaddressを新しいアドレスへ更新する。
-      stats.merge(updated_references: update_references(stats.fetch(:forwarding)))
+      timed_gc(:compact, reason) do
+        mark_roots
+        # 2. markedなオブジェクトだけをヒープ先頭へ詰め、forwarding tableを作る。
+        stats = @heap.compact
+        # 3. 移動したオブジェクトを指すObjectRefのaddressを新しいアドレスへ更新する。
+        stats.merge(updated_references: update_references(stats.fetch(:forwarding)))
+      end
     end
 
     private
+
+    def empty_gc_stats
+      {
+        allocated_objects: 0,
+        gc_count: 0,
+        auto_gc_count: 0,
+        sweep_count: 0,
+        compact_count: 0,
+        gc_time_ms: 0.0,
+        collected_objects: 0,
+        moved_objects: 0,
+        updated_references: 0,
+        heap_slots_before_last_gc: 0,
+        heap_slots_after_last_gc: 0,
+        heap_size_after_last_gc: 0
+      }
+    end
+
+    def allocate_int_array(size)
+      run_auto_gc_if_needed
+      @gc_stats[:allocated_objects] += 1
+      @heap.allocate(IntArray.new(size))
+    end
+
+    def run_auto_gc_if_needed
+      return if @gc_strategy == :manual
+      return unless @gc_threshold
+      return if @heap.size < @gc_threshold
+
+      if @gc_strategy == :sweep
+        gc(reason: :auto)
+      else
+        compact_gc(reason: :auto)
+      end
+    end
+
+    def timed_gc(kind, reason)
+      old_slots = @heap.slots
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      stats = yield
+      elapsed_ms = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000.0
+      record_gc_stats(kind, reason, stats, old_slots, elapsed_ms)
+      stats
+    end
+
+    def record_gc_stats(kind, reason, stats, old_slots, elapsed_ms)
+      @gc_stats[:gc_count] += 1
+      @gc_stats[:auto_gc_count] += 1 if reason == :auto
+      @gc_stats[:sweep_count] += 1 if kind == :sweep
+      @gc_stats[:compact_count] += 1 if kind == :compact
+      @gc_stats[:gc_time_ms] += elapsed_ms
+      @gc_stats[:collected_objects] += stats.fetch(:collected, 0)
+      @gc_stats[:moved_objects] += stats.fetch(:moved, 0)
+      @gc_stats[:updated_references] += stats.fetch(:updated_references, 0)
+      @gc_stats[:heap_slots_before_last_gc] = old_slots
+      @gc_stats[:heap_slots_after_last_gc] = @heap.slots
+      @gc_stats[:heap_size_after_last_gc] = @heap.size
+    end
 
     def mark_roots
       # MiniC++ VMでのGCルートは、値スタックと各関数フレームのローカル変数。

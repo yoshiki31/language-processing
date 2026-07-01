@@ -269,6 +269,58 @@ class VirtualMachineTest < Minitest::Test
     assert_equal 0, vm.heap.slots
   end
 
+  def test_auto_sweep_gc_runs_when_heap_reaches_threshold
+    source = <<~MINICPP
+      int main() {
+        int[] old_values = new int[1];
+        int[] live_values = new int[1];
+        old_values = live_values;
+        int[] new_values = new int[1];
+
+        live_values[0] = 12;
+        new_values[0] = 30;
+        return old_values[0] + new_values[0];
+      }
+    MINICPP
+    vm = MiniCpp::VM.new(compile(source), gc_strategy: :sweep, gc_threshold: 2)
+
+    assert_equal 42, vm.run
+    assert_equal 1, vm.gc_stats.fetch(:auto_gc_count)
+    assert_equal 1, vm.gc_stats.fetch(:sweep_count)
+    assert_equal 1, vm.gc_stats.fetch(:collected_objects)
+    assert_equal 3, vm.gc_stats.fetch(:allocated_objects)
+  end
+
+  def test_auto_compact_gc_runs_and_updates_references_when_heap_reaches_threshold
+    source = <<~MINICPP
+      int main() {
+        int[] dead = new int[1];
+        int[][] arrays = new int[2];
+        int[] left = new int[1];
+
+        left[0] = 11;
+        arrays[0] = left;
+        dead = left;
+
+        int[] right = new int[1];
+        right[0] = 31;
+        arrays[1] = right;
+
+        return arrays[0][0] + arrays[1][0];
+      }
+    MINICPP
+    vm = MiniCpp::VM.new(compile(source), gc_strategy: :compact, gc_threshold: 3)
+
+    assert_equal 42, vm.run
+    assert_equal 1, vm.gc_stats.fetch(:auto_gc_count)
+    assert_equal 1, vm.gc_stats.fetch(:compact_count)
+    assert_equal 1, vm.gc_stats.fetch(:collected_objects)
+    assert_equal 2, vm.gc_stats.fetch(:moved_objects)
+    assert_equal 2, vm.gc_stats.fetch(:updated_references)
+    assert_equal 4, vm.gc_stats.fetch(:allocated_objects)
+    assert_equal 3, vm.heap.slots
+  end
+
   def test_rejects_array_index_out_of_bounds
     error = assert_raises(RuntimeError) do
       execute("int main() { int[] values = new int[1]; return values[1]; }")
