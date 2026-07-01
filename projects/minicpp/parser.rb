@@ -240,11 +240,13 @@ module MiniCpp
 
     def parse_type
       expect_ident("int")
-      return :int unless peek == [:op, "["]
-
-      advance
-      expect_op("]")
-      :int_array
+      dimensions = 0
+      while peek == [:op, "["]
+        advance
+        expect_op("]")
+        dimensions += 1
+      end
+      dimensions.zero? ? :int : [:int_array, dimensions]
     end
 
     def expect_identifier

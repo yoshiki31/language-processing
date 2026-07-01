@@ -48,6 +48,17 @@ class ParserTest < Minitest::Test
     assert_equal [:return, [:array_get, [:var, "a"], [:int, 0]]], statements[2]
   end
 
+  def test_parses_nested_array_declaration_and_access
+    ast = parse("int main() { int[][] arrays = new int[1]; return arrays[0][0]; }")
+    statements = ast[1][0][3][1]
+
+    assert_equal [:var_decl, "arrays", [:new_int_array, [:int, 1]]], statements[0]
+    assert_equal(
+      [:return, [:array_get, [:array_get, [:var, "arrays"], [:int, 0]], [:int, 0]]],
+      statements[1]
+    )
+  end
+
   def test_parses_all_examples
     Dir[File.join(__dir__, "examples", "*.mcpp")].each do |path|
       assert_equal :program, parse(File.read(path))[0], path

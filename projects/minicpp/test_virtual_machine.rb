@@ -181,6 +181,39 @@ class VirtualMachineTest < Minitest::Test
     assert_equal [8, ""], execute(source)
   end
 
+  def test_stores_array_references_inside_arrays
+    source = <<~MINICPP
+      int main() {
+        int[][] arrays = new int[1];
+        int[] values = new int[1];
+        values[0] = 42;
+        arrays[0] = values;
+        return arrays[0][0];
+      }
+    MINICPP
+
+    assert_equal [42, ""], execute(source)
+  end
+
+  def test_gc_marks_array_references_stored_inside_arrays
+    source = <<~MINICPP
+      int main() {
+        int[][] arrays = new int[1];
+        int[] old_values = new int[1];
+        old_values[0] = 42;
+        arrays[0] = old_values;
+        old_values = new int[1];
+        old_values[0] = 7;
+        gc();
+        return arrays[0][0] + old_values[0];
+      }
+    MINICPP
+    vm = MiniCpp::VM.new(compile(source))
+
+    assert_equal 49, vm.run
+    assert_equal 3, vm.heap.size
+  end
+
   def test_rejects_array_index_out_of_bounds
     error = assert_raises(RuntimeError) do
       execute("int main() { int[] values = new int[1]; return values[1]; }")

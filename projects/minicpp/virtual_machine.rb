@@ -65,10 +65,14 @@ module MiniCpp
     end
 
     def set(index, value)
-      raise "int配列には整数だけを格納できます: #{value.inspect}" unless value.int?
+      raise "配列にはMiniC++の値だけを格納できます: #{value.inspect}" unless value.is_a?(Value)
 
       check_index(index)
       @elements[index] = value
+    end
+
+    def each_value(&block)
+      @elements.each(&block)
     end
 
     def inspect
@@ -124,7 +128,10 @@ module MiniCpp
       entry = @objects[ref.address]
       raise "不正なヒープ参照です: #{ref.inspect}" unless entry
 
+      return false if entry.marked
+
       entry.marked = true
+      true
     end
 
     def sweep
@@ -274,7 +281,11 @@ module MiniCpp
     def mark_value(value)
       return unless value.object?
 
-      @heap.mark(value.as_object)
+      ref = value.as_object
+      return unless @heap.mark(ref)
+
+      object = @heap.fetch(ref)
+      object.each_value { |element| mark_value(element) } if object.respond_to?(:each_value)
     end
 
   end

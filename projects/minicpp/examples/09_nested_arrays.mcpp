@@ -1,0 +1,13 @@
+int main() {
+  int[][] arrays = new int[1];
+  int[] values = new int[1];
+  values[0] = 42;
+
+  arrays[0] = values;
+  values = new int[1];
+  values[0] = 7;
+
+  gc();
+
+  return arrays[0][0] + values[0];
+}
