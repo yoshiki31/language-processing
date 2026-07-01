@@ -46,6 +46,23 @@ int main() {
 組み込み関数 `gc()` は、スタック、ローカル変数、配列内参照から到達できない配列をVMヒープから回収します。
 `compact_gc()` は同じ到達可能性判定を使い、生存配列をヒープ先頭に詰めて参照アドレスも更新します。
 
+自動GCを使う場合は、配列確保時にVMヒープ上の生存オブジェクト数を確認し、閾値以上ならGCを実行します。
+
+```console
+$ ruby minicpp.rb --result --gc-stats --gc-strategy compact --gc-threshold 128 examples/10_compact_gc.mcpp
+```
+
+`--gc-strategy` は `manual`、`sweep`、`compact` を指定できます。`--gc-stats` は確保数、GC回数、GC時間、回収数、移動数、参照更新数を表示します。
+
+Mark & Sweep / Mark & Compact のベンチマーク:
+
+```console
+$ ruby benchmarks/gc_benchmark.rb
+$ ruby benchmarks/gc_benchmark.rb 5000 256
+```
+
+世代別GCは今後の発展課題です。MiniC++では配列内に配列参照を格納できるため、世代別GCを正しく実装するには、old世代からyoung世代への参照を記録するwrite barrierが必要になります。
+
 各処理段階の結果をすべて表示:
 
 ```console
