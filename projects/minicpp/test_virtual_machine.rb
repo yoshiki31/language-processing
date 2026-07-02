@@ -321,6 +321,24 @@ class VirtualMachineTest < Minitest::Test
     assert_equal 3, vm.heap.slots
   end
 
+  def test_sweep_reuses_free_slots_but_compact_appends_after_dense_heap
+    heap = MiniCpp::Heap.new
+    first = heap.allocate(MiniCpp::IntArray.new(1))
+    second = heap.allocate(MiniCpp::IntArray.new(1))
+
+    heap.mark(second)
+    assert_equal 1, heap.sweep
+    reused = heap.allocate(MiniCpp::IntArray.new(1))
+    assert_equal first.address, reused.address
+    assert_equal 2, heap.slots
+
+    heap.mark(second)
+    heap.compact
+    appended = heap.allocate(MiniCpp::IntArray.new(1))
+    assert_equal 1, appended.address
+    assert_equal 2, heap.slots
+  end
+
   def test_rejects_array_index_out_of_bounds
     error = assert_raises(RuntimeError) do
       execute("int main() { int[] values = new int[1]; return values[1]; }")

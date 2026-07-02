@@ -1,0 +1,11 @@
+int make_value() {
+  int[] temporary = new int[1];
+  temporary[0] = 9;
+  return temporary[0];
+}
+
+int main() {
+  int value = make_value();
+  gc();
+  return value;
+}

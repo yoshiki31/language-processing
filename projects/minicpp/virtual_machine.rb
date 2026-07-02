@@ -106,12 +106,14 @@ module MiniCpp
 
     def initialize
       @objects = []
+      @has_free_slots = false
     end
 
     def allocate(object)
-      address = @objects.index(nil)
+      address = @has_free_slots ? @objects.index(nil) : nil
       if address
         @objects[address] = Entry.new(object, false)
+        @has_free_slots = @objects.any?(&:nil?)
       else
         address = @objects.size
         @objects << Entry.new(object, false)
@@ -149,6 +151,7 @@ module MiniCpp
           entry.marked = false
         else
           @objects[index] = nil
+          @has_free_slots = true
           collected += 1
         end
       end
@@ -194,6 +197,7 @@ module MiniCpp
       end
 
       @objects = compacted
+      @has_free_slots = false
       {
         collected: collected,
         moved: moved,

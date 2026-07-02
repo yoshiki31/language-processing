@@ -1,0 +1,11 @@
+int main() {
+  int[] left = new int[1];
+  left[0] = 3;
+
+  int[] right = new int[1];
+  right[0] = 4;
+
+  gc();
+
+  return left[0] + right[0];
+}

@@ -1,0 +1,16 @@
+int main() {
+  int[] first = new int[1];
+  first[0] = 1;
+
+  int[] second = new int[1];
+  second[0] = 2;
+
+  int[] live = new int[1];
+  live[0] = 7;
+
+  first = live;
+  second = live;
+  gc();
+
+  return first[0] + second[0] + live[0];
+}

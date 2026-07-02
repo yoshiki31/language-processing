@@ -1,0 +1,11 @@
+int main() {
+  int[] first = new int[1];
+  first[0] = 1;
+
+  int[] second = new int[1];
+  second[0] = 2;
+
+  first = second;
+
+  return first[0];
+}
